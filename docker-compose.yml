@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: gym_app_postgres_mvp
+    volumes:
+      - postgres_data_mvp:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_USER: gym_user        # Pode obter do .env ou definir aqui
+      POSTGRES_PASSWORD: gym_password  # Pode obter do .env ou definir aqui
+      POSTGRES_DB: gym_db            # Pode obter do .env ou definir aqui
+    ports:
+      - "5433:5432" # Mapear para uma porta diferente no host se 5432 estiver em uso
+    networks:
+      - gym_app_network_mvp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-gym_user} -d $${POSTGRES_DB:-gym_db}"] # Usar variáveis de ambiente
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Dar tempo ao Postgres para iniciar
+
+  api:
+    build:
+      context: . # O contexto é o diretório atual onde está o docker-compose.yml
+      dockerfile: Dockerfile
+    container_name: gym_app_fastapi_mvp
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload # Comando para desenvolvimento
+    volumes:
+      - .:/app # Montar o código local na app do container para live reload
+    ports:
+      - "8001:8000" # Mapear para uma porta diferente no host
+    depends_on:
+      db:
+        condition: service_healthy # Esperar que a base de dados esteja saudável
+    environment:
+      # As variáveis de ambiente para a API são carregadas do .env pelo Pydantic Settings
+      # ou podem ser definidas explicitamente aqui se não usar .env no container.
+      # Exemplo se não usar .env no Pydantic Settings diretamente:
+      DATABASE_URL: postgresql://gym_user:gym_password@db:5432/gym_db
+      SECRET_KEY: a_sua_chave_secreta_super_segura_para_jwt_altere_isto! # Deve ser igual à do .env
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+    networks:
+      - gym_app_network_mvp
+    # Pode usar env_file para carregar variáveis de um ficheiro .env específico para este serviço
+    # env_file:
+    #   - ./.env
+
+volumes:
+  postgres_data_mvp: # Volume nomeado para persistir os dados do Postgres
+    driver: local
+
+networks:
+  gym_app_network_mvp: # Rede personalizada para os serviços comunicarem
+    driver: bridge
